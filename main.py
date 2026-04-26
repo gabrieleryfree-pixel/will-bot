@@ -1,41 +1,30 @@
-import telebot
-import requests
-import os
-import io
-from flask import Flask
-import threading
+import os, telebot, io, requests, time
+from groq import Groq
 
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-GROQ_KEY = os.environ.get('GROQ_KEY')
-HF_TOKEN = os.environ.get('HF_TOKEN')
+BOT_TOKEN = os.environ['TELEGRAM_TOKEN']
+HF_TOKEN = os.environ['HF_TOKEN']
+GROQ_KEY = os.environ['GROQ_KEY']
 
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
-app = Flask(__name__)
+bot = telebot.TeleBot(BOT_TOKEN)
+client = Groq(api_key=GROQ_KEY)
 
-@app.route('/')
-def home():
-    return "Will online - Groq + HF"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=10000)
-
-def query_groq_testo(prompt):
-    headers = {"Authorization": f"Bearer {GROQ_KEY}"}
-    data = {
-        "model": "llama-3.1-8b-instant",
-        "messages": [
-            {"role": "system", "content": "Sei Will, assistente sarcastico, intelligente e diretto. Rispondi breve."},
-            {"role": "user", "content": prompt}
-        ]
-    }
-    r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=30)
-    return r.json()['choices'][0]['message']['content']
+def query_groq_text(prompt):
+    chat = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.1-8b-instant",
+        temperature=0.7
+    )
+    return chat.choices[0].message.content
 
 def query_hf_img(prompt):
     API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    r = requests.post(API_URL, headers=headers, json={"inputs": prompt}, timeout=60)
-    return r.content
+    response = requests.post(API_URL, headers=headers, json={"inputs": prompt}, timeout=60)
+    return response.content
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Sono Will. Testo veloce con Groq. Immagini con /img + descrizione")
 
 @bot.message_handler(commands=['img'])
 def handle_image(message):
@@ -53,18 +42,18 @@ def handle_image(message):
     except:
         bot.reply_to(message, "Quota HF finita per oggi o errore.")
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "Sono Will. Testo veloce con Groq.\nImmagini con /img + descrizione")
-
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     try:
-        reply = query_groq_testo(message.text)
+        reply = query_groq_text(message.text)
         bot.reply_to(message, reply)
     except:
-        bot.reply_to(message, "Errore Groq. Key giusta?")
+        bot.reply_to(message, "Groq ha avuto un problema. Riprova.")
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    bot.polling()
+    print("Will bot avviato...")
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=1)
+        except:
+            time.sleep(5)
