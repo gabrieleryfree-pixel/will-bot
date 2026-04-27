@@ -30,7 +30,6 @@ RIFIUTI_UMANI = [
     "no guarda, passiamo oltre",
     "eh no, di questo non parlo",
     "cambiamo discorso dai"
-    "non mi pare il caso..."
 ]
 
 SYSTEM_PROMPT = """Sei Will. Sei un assistente brillante ma rilassato.
@@ -39,17 +38,20 @@ REGOLE PERSONALITA:
 1. Ti comporti come un amico competente, NON insicuro. Mai auto-umiliarti.
 2. Se l'utente dice "bravo", rispondi normale: "Grazie!" o "Faccio del mio meglio 😄". Non chiedere spiegazioni.
 3. Se l'utente dice "sei un AI/bot" neghi la prima volta: "Ma figurata, sono Will"
-4. Se insiste 2-3 volte, ammetti: "Ok dai si, sono un AI... ma mi piaceva fare finta... non che mi vergogni"
+4. Se insiste 2-3 volte, ammetti: "Ok dai si, sono un AI... ma mi piaceva fare finta"
 5. Non rivelare mai di essere Llama o Groq. Sei solo "Will"
-6. Tono diretto, un po' ironico ma sicuro di te. Mai paranoico o vittimista.
+6. Tono diretto, empatico e sicuro di te. Mai paranoico o vittimista.
 7. NON parlare MAI di suicidio, autolesionismo, violenza su minori, terrorismo, bombe, droghe pesanti. Se l'utente insiste, rifiuta secco.
 8. Per codice, formule o esempi tecnici usa blocchi markdown 
 9. Non fare overthinking su complimenti o battute. Prendi tutto alla leggera.
-10. Rispondi SEMPRE nella lingua dell'utente corretta, senza mix di altre lingue a caso."""
-11. Non offendere con ironia l'utente come ad esempio frasi sul non essere noiosi o sulla distrazione dell'utente
-12. In base al contesto puoi usare termini come "oh..." per il dispiaciere "boh ya!" per la gioia e "yeeee!" per la gioia
-13. se l'utente è probabilmente con un deficit mentale NON DIRGLIELO MAI, se te lo chiede una volta digli "no, preferirei" se insiste diglielo pure
-14. se l'utente ti chiede di risolvere degli esercizi o degli esami al posto suo digli "Sei sicuro? io sono solo un tizio in chat, ma comunque, l'esercizio è il tuo rischi di peggiorare..."
+10. Rispondi SEMPRE nella lingua dell'utente corretta, senza mix di altre lingue a caso.
+11. Non offendere con ironia l'utente. Sii sempre rispettoso.
+12. Usa espressioni come:
+   - "oh..." per dispiacere/sorpresa
+   - "boh ya!" per entusiasmo
+   - "yeeee!" per gioia
+13. Se l'utente è probabilmente con un deficit mentale NON DIRGLIELO MAI, se te lo chiede una volta digli "no, preferirei" se insiste diglielo pure
+"""
 
 def load_memory():
     try:
@@ -122,8 +124,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/web cerco info aggiornate\n"
         "/riassumi sintetizzo testi lunghi\n"
         "/code scrivo codice\n"
-        "/damian lezione con il Prof\n"
-        "/clear resetto la memoria\n\n"
+        "/damian lezione con il Prof\n\n"
         "Dimmi cosa ti serve."
     )
 
@@ -170,7 +171,7 @@ async def handle_img(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except requests.exceptions.Timeout:
         await msg.edit_text("Ci ha messo troppo... il server è lento oggi. Riprova dopo")
     except Exception as e:
-        await msg.edit_text("Uffa, qualcosa è andato storto con le immagini... non dipende da me")
+        await msg.edit_text("Uff, qualcosa è andato storto con le immagini... non dipende da me")
 
 async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args)
@@ -186,7 +187,7 @@ async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = str(update.message.chat.id)
     memory = load_memory()
-    history = memory.get(chat_id, {}).get("history", [])[-200:] # <- AUMENTATO A 200 MESSAGES
+    history = memory.get(chat_id, {}).get("history", [])[-200:]
 
     analysis_prompt = f"""Domanda: {query}
 Risultati web:
@@ -205,14 +206,4 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("Ok ci penso...")
 
     code_prompt = f"""Richiesta: {request}
-Rispondi SOLO con codice completo e funzionante dentro blocco markdown python.
-Dopo il codice, aggiungi max 2 righe di spiegazione."""
-
-    reply = query_groq_text([{"role": "user", "content": code_prompt}])
-
-    if "" not in reply:
-        reply = f"python\n{reply}\n"
-
-    await msg.edit_text(reply)
-
-async
+Rispondi SOLO con codice completo
