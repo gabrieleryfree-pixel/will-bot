@@ -199,11 +199,4 @@ Analizza e rispondi in modo completo. Usa blocchi  per dati o liste."""
     await msg.edit_text(reply)
 
 async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    request = ' '.join(context.args)
-    if not request:
-        await update.message.reply_text("Dimmi che codice ti serve")
-        return
-    msg = await update.message.reply_text("Ok ci penso...")
-
-    code_prompt = f"""Richiesta: {request}
-Rispondi SOLO con codice completo
+    request
