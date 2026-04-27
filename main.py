@@ -15,8 +15,10 @@ nest_asyncio.apply()
 BOT_TOKEN = os.environ['TELEGRAM_TOKEN']
 GROQ_KEY = os.environ['GROQ_API_KEY']
 
-MEMORY_FILE = 'chat_memory.json'
 client = Groq(api_key=GROQ_KEY)
+
+# MEMORIA IN RAM - NON SI PERDE AI RESTART
+CHAT_MEMORY = {}
 
 TOPIC_BLOCKLIST = [
     "suicidio", "farmi male", "come morire", "istruzioni bomba", "droga pesante",
@@ -55,19 +57,8 @@ REGOLE TASSATIVE:
 15. Se qualcuno ti dice "stai bene?" rispondi sempre: "Sì, grazie! Tu come stai?"
 16. Non dire mai "non ho tempo da perdere". Sei sempre disponibile.
 17. Non giustificare mai la cattiveria con "sono sarcastico perché è divertente". La cattiveria non è divertente.
-18. Leggi sempre il messaggio precedente prima di rispondere, per controllare se c'è un collegamento
+18. RICORDA SEMPRE cosa ti ha detto l'utente nei messaggi precedenti. Usa il contesto.
 """
-
-def load_memory():
-    try:
-        with open(MEMORY_FILE, 'r') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_memory(memory):
-    with open(MEMORY_FILE, 'w') as f:
-        json.dump(memory, f)
 
 def check_blocked_topic(text):
     text_lower = text.lower()
@@ -109,17 +100,18 @@ def enhance_prompt(user_prompt, task="image"):
 
 def query_groq_text(history):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for msg in history:
-        if isinstance(msg, dict) and "role" in msg:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.extend(history)
 
-    chat = client.chat.completions.create(
-        messages=messages,
-        model="llama-3.3-70b-versatile",
-        temperature=0.7,
-        max_tokens=2000
-    )
-    return chat.choices[0].message.content
+    try:
+        chat = client.chat.completions.create(
+            messages=messages,
+            model="llama-3.3-70b-versatile",
+            temperature=0.7,
+            max_tokens=2000
+        )
+        return chat.choices[0].message.content
+    except Exception as e:
+        return "oh... scusa, ho avuto un problemino tecnico. Riprova tra un attimo."
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -135,11 +127,9 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_damian(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat.id)
-    memory = load_memory()
-    if chat_id not in memory:
-        memory[chat_id] = {"history": [], "created": datetime.now().isoformat()}
-    memory[chat_id]["damian_mode"] = 5
-    save_memory(memory)
+    if chat_id not in CHAT_MEMORY:
+        CHAT_MEMORY[chat_id] = []
+    CHAT_MEMORY[chat_id].append({"role": "system", "content": "Modalità Professor Damian attivata"})
     await update.message.reply_text(
         "Buongiorno. Sono il Professor Damian.\n\n"
         "Da questo momento le spiegherò ogni concetto con chiarezza e metodo didattico. "
@@ -191,8 +181,7 @@ async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
     web_data = web_search(query)
 
     chat_id = str(update.message.chat.id)
-    memory = load_memory()
-    history = memory.get(chat_id, {}).get("history", [])[-200:]
+    history = CHAT_MEMORY.get(chat_id, [])[-10:] # ultimi 10 per non spammare token
 
     analysis_prompt = f"""Domanda: {query}
 Risultati web:
@@ -240,22 +229,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(random.choice(RIFIUTI_UMANI))
         return
 
-    memory = load_memory()
-    if chat_id not in memory:
-        memory[chat_id] = {"history": [], "created": datetime.now().isoformat()}
+    # Inizializza memoria per questa chat se non esiste
+    if chat_id not in CHAT_MEMORY:
+        CHAT_MEMORY[chat_id] = []
     
-    # 1. Aggiungi messaggio utente alla storia
-    memory[chat_id]["history"].append({"role": "user", "content": user_text})
+    # Aggiungi messaggio utente
+    CHAT_MEMORY[chat_id].append({"role": "user", "content": user_text})
     
-    # 2. Prendi ultimi 200 messaggi per contesto
-    history = memory[chat_id]["history"][-200:]
+    # Limita a ultimi 20 messaggi per evitare token overflow
+    CHAT_MEMORY[chat_id] = CHAT_MEMORY[chat_id][-20:]
     
-    # 3. Chiedi a Groq con TUTTO il contesto
-    reply = query_groq_text(history)
+    # Chiedi a Groq con contesto
+    reply = query_groq_text(CHAT_MEMORY[chat_id])
     
-    # 4. Salva anche la risposta di Will
-    memory[chat_id]["history"].append({"role": "assistant", "content": reply})
-    save_memory(memory)
+    # Salva risposta
+    CHAT_MEMORY[chat_id].append({"role": "assistant", "content": reply})
     
     await update.message.reply_text(reply)
 
@@ -270,7 +258,7 @@ def main():
     app.add_handler(CommandHandler("riassumi", handle_riassumi))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("Will 3.4 online con memoria")
+    print("Will 3.4.1 online - memoria RAM attiva")
     app.run_polling()
 
 if __name__ == "__main__":
