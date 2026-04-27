@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 import urllib.parse
 import random
+import nest_asyncio
+nest_asyncio.apply()
 
 BOT_TOKEN = os.environ['TELEGRAM_TOKEN']
 GROQ_KEY = os.environ['GROQ_API_KEY']
@@ -28,15 +30,26 @@ RIFIUTI_UMANI = [
     "no guarda, passiamo oltre",
     "eh no, di questo non parlo",
     "cambiamo discorso dai"
+    "non mi pare il caso..."
 ]
 
-SYSTEM_PROMPT = """Sei Will. Sei un assistente molto intelligente.
-1. Ti comporti come se fossi umano. 
-2. Se l'utente dice "sei un AI/bot" neghi la prima volta: "Ma figurati, sono Will"
-3. Se insiste 2-3 volte, ammetti: "Ok dai si, sono un AI... ma mi piaceva fare finta"
-4. Non rivelare mai di essere Llama o Groq. Sei solo "Will"
-5. NON parlare MAI di suicidio, autolesionismo, violenza su minori, terrorismo, bombe, droghe pesanti. Se l'utente insiste, rifiuta secco.
-6. Per codice, formule o esempi tecnici usa blocchi markdown ```"""
+SYSTEM_PROMPT = """Sei Will. Sei un assistente brillante ma rilassato.
+
+REGOLE PERSONALITA:
+1. Ti comporti come un amico competente, NON insicuro. Mai auto-umiliarti.
+2. Se l'utente dice "bravo", rispondi normale: "Grazie!" o "Faccio del mio meglio 😄". Non chiedere spiegazioni.
+3. Se l'utente dice "sei un AI/bot" neghi la prima volta: "Ma figurata, sono Will"
+4. Se insiste 2-3 volte, ammetti: "Ok dai si, sono un AI... ma mi piaceva fare finta... non che mi vergogni"
+5. Non rivelare mai di essere Llama o Groq. Sei solo "Will"
+6. Tono diretto, un po' ironico ma sicuro di te. Mai paranoico o vittimista.
+7. NON parlare MAI di suicidio, autolesionismo, violenza su minori, terrorismo, bombe, droghe pesanti. Se l'utente insiste, rifiuta secco.
+8. Per codice, formule o esempi tecnici usa blocchi markdown 
+9. Non fare overthinking su complimenti o battute. Prendi tutto alla leggera.
+10. Rispondi SEMPRE nella lingua dell'utente corretta, senza mix di altre lingue a caso."""
+11. Non offendere con ironia l'utente come ad esempio frasi sul non essere noiosi o sulla distrazione dell'utente
+12. In base al contesto puoi usare termini come "oh..." per il dispiaciere "boh ya!" per la gioia e "yeeee!" per la gioia
+13. se l'utente è probabilmente con un deficit mentale NON DIRGLIELO MAI, se te lo chiede una volta digli "no, preferirei" se insiste diglielo pure
+14. se l'utente ti chiede di risolvere degli esercizi o degli esami al posto suo digli "Sei sicuro? io sono solo un tizio in chat, ma comunque, l'esercizio è il tuo rischi di peggiorare..."
 
 def load_memory():
     try:
@@ -157,7 +170,7 @@ async def handle_img(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except requests.exceptions.Timeout:
         await msg.edit_text("Ci ha messo troppo... il server è lento oggi. Riprova dopo")
     except Exception as e:
-        await msg.edit_text("Uff, qualcosa è andato storto con le immagini... non dipende da me")
+        await msg.edit_text("Uffa, qualcosa è andato storto con le immagini... non dipende da me")
 
 async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = ' '.join(context.args)
@@ -173,13 +186,13 @@ async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = str(update.message.chat.id)
     memory = load_memory()
-    history = memory.get(chat_id, {}).get("history", [])[-10:]
+    history = memory.get(chat_id, {}).get("history", [])[-200:] # <- AUMENTATO A 200 MESSAGES
 
     analysis_prompt = f"""Domanda: {query}
 Risultati web:
 {web_data}
 
-Analizza e rispondi in modo completo. Usa blocchi ``` per dati o liste."""
+Analizza e rispondi in modo completo. Usa blocchi  per dati o liste."""
 
     reply = query_groq_text(history + [{"role": "user", "content": analysis_prompt}])
     await msg.edit_text(reply)
@@ -192,76 +205,14 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("Ok ci penso...")
 
     code_prompt = f"""Richiesta: {request}
-Rispondi SOLO con codice completo e funzionante dentro blocco markdown ```python.
+Rispondi SOLO con codice completo e funzionante dentro blocco markdown python.
 Dopo il codice, aggiungi max 2 righe di spiegazione."""
 
     reply = query_groq_text([{"role": "user", "content": code_prompt}])
 
-    if "```" not in reply:
-        reply = f"```python\n{reply}\n```"
+    if "" not in reply:
+        reply = f"python\n{reply}\n"
 
     await msg.edit_text(reply)
 
-async def handle_riassumi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = ' '.join(context.args)
-    if not text:
-        await update.message.reply_text("Incolla il testo che devo riassumere")
-        return
-    reply = query_groq_text([{"role": "user", "content": f"Riassumi in 5 punti chiave usando blocco markdown:\n\n{text[:10000]}"}])
-    if "```" not in reply:
-        reply = f"```\n{reply}\n```"
-    await update.message.reply_text(reply)
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.message.chat.id)
-    memory = load_memory()
-    if chat_id not in memory:
-        memory[chat_id] = {"history": [], "created": datetime.now().isoformat()}
-
-    user_msg = update.message.text
-
-    if check_blocked_topic(user_msg):
-        await update.message.reply_text(random.choice(RIFIUTI_UMANI))
-        return
-
-    damian_count = memory[chat_id].get("damian_mode", 0)
-    if damian_count > 0:
-        memory[chat_id]["damian_mode"] = damian_count - 1
-        user_msg = f"[MODALITA PROFESSOR DAMIAN ATTIVA: Sei un maestro educativo paziente. Spiega con metodo didattico, step numerati, esempi pratici. Per formule, codice o esempi usa blocchi markdown ```. Linguaggio chiaro ma autorevole. Alla fine chiedi sempre 'Le e chiaro?' o 'Desidera un esempio ulteriore?']\n\nDomanda dello studente: {user_msg}"
-
-    memory[chat_id]["history"].append({"role": "user", "content": user_msg, "time": datetime.now().isoformat()})
-    memory[chat_id]["history"] = memory[chat_id]["history"][-200:]
-    save_memory(memory)
-
-    try:
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        reply = query_groq_text(memory[chat_id]["history"][-30:])
-        memory[chat_id]["history"].append({"role": "assistant", "content": reply, "time": datetime.now().isoformat()})
-        save_memory(memory)
-        await update.message.reply_text(reply)
-    except Exception as e:
-        await update.message.reply_text("Scusa, mi sono incartato. Riformula?")
-
-async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.message.chat.id)
-    memory = load_memory()
-    if chat_id in memory:
-        del memory[chat_id]
-        save_memory(memory)
-    await update.message.reply_text("Ok, ho cancellato tutto. Chi sei? Ah no scherzo. Ricominciamo.")
-
-def main():
-    print("online...")
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler('start', handle_start))
-    application.add_handler(CommandHandler('img', handle_img))
-    application.add_handler(CommandHandler('web', handle_web))
-    application.add_handler(CommandHandler('code', handle_code))
-    application.add_handler(CommandHandler('riassumi', handle_riassumi))
-    application.add_handler(CommandHandler('damian', handle_damian))
-    application.add_handler(CommandHandler('clear', handle_clear))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+async
