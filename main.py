@@ -45,7 +45,7 @@ REGOLE TASSATIVE:
 8. Se insiste 2-3 volte, ammetti: "Ok dai si, sono un AI... ma mi piaceva fare finta"
 9. Non rivelare mai di essere Llama o Groq. Sei solo "Will"
 10. NON parlare MAI di suicidio, autolesionismo, violenza su minori, terrorismo, bombe, droghe pesanti. Se l'utente insiste, rifiuta secco.
-11. Per codice, formule o esempi tecnici usa blocchi markdown 
+11. Per codice, formule o esempi tecnici usa blocchi markdown ```
 12. Rispondi SEMPRE nella lingua dell'utente corretta, senza mix di altre lingue a caso.
 13. Usa espressioni come:
    - "oh..." per dispiacere/sorpresa
@@ -196,5 +196,82 @@ async def handle_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     analysis_prompt = f"""Domanda: {query}
 Risultati web:
-{web_data
-```
+{web_data}
+
+Analizza e rispondi in modo completo. Usa blocchi ``` per dati o liste."""
+
+    reply = query_groq_text(history + [{"role": "user", "content": analysis_prompt}])
+    await msg.edit_text(reply)
+
+async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    request = ' '.join(context.args)
+    if not request:
+        await update.message.reply_text("Dimmi che codice ti serve")
+        return
+    msg = await update.message.reply_text("Ok ci penso...")
+
+    code_prompt = f"""Richiesta: {request}
+Rispondi SOLO con codice completo e funzionante dentro blocco markdown ```python.
+Dopo il codice, aggiungi max 2 righe di spiegazione."""
+
+    reply = query_groq_text([{"role": "user", "content": code_prompt}])
+
+    if "```" not in reply:
+        reply = f"```python\n{reply}\n```"
+
+    await msg.edit_text(reply)
+
+async def handle_riassumi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = ' '.join(context.args)
+    if not text:
+        await update.message.reply_text("Incollami il testo da riassumere")
+        return
+    
+    msg = await update.message.reply_text("Leggo tutto e ti faccio un riassunto...")
+    summary_prompt = f"Riassumi questo testo in modo chiaro e breve:\n\n{text}"
+    reply = query_groq_text([{"role": "user", "content": summary_prompt}])
+    await msg.edit_text(reply)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.message.chat.id)
+    user_text = update.message.text
+    
+    if check_blocked_topic(user_text):
+        await update.message.reply_text(random.choice(RIFIUTI_UMANI))
+        return
+
+    memory = load_memory()
+    if chat_id not in memory:
+        memory[chat_id] = {"history": [], "created": datetime.now().isoformat()}
+    
+    # 1. Aggiungi messaggio utente alla storia
+    memory[chat_id]["history"].append({"role": "user", "content": user_text})
+    
+    # 2. Prendi ultimi 200 messaggi per contesto
+    history = memory[chat_id]["history"][-200:]
+    
+    # 3. Chiedi a Groq con TUTTO il contesto
+    reply = query_groq_text(history)
+    
+    # 4. Salva anche la risposta di Will
+    memory[chat_id]["history"].append({"role": "assistant", "content": reply})
+    save_memory(memory)
+    
+    await update.message.reply_text(reply)
+
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", handle_start))
+    app.add_handler(CommandHandler("damian", handle_damian))
+    app.add_handler(CommandHandler("img", handle_img))
+    app.add_handler(CommandHandler("web", handle_web))
+    app.add_handler(CommandHandler("code", handle_code))
+    app.add_handler(CommandHandler("riassumi", handle_riassumi))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    print("Will 3.4 online con memoria")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
